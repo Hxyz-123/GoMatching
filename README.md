@@ -16,7 +16,6 @@
 # Introduction
 <figure>
 <img src="figs/framework.png">
-<figcaption align = "center"><b>Figure 1: The overall architecture of GoMatching.</b></figcaption>
 </figure>
 
 1. We identify a main bottleneck in the state-of-the-art video text spotter: the limited recognition capability. In response to this issue, we propose to efficiently turn an off-the-shelf query-based image text spotter into a specialist on video and present a simple baseline termed GoMatching.
@@ -173,7 +172,7 @@ This project is for research purpose only. For any other questions please contac
 
 If you find GoMatching helpful, please consider giving this repo a star and citing:
 
-```
+```bibtex
 @article{he2024gomatching,
   title={GoMatching: A Simple Baseline for Video Text Spotting via Long and Short Term Matching},
   author={He, Haibin and Ye, Maoyuan and Zhang, Jing and Liu, Juhua and Tao, Dacheng},
@@ -189,8 +188,15 @@ If you find GoMatching helpful, please consider giving this repo a star and citi
   year={2023}
 }
 ```
-
-
+```bibtex
+@inproceedings{ye2023deepsolo,
+  title={DeepSolo: Let Transformer Decoder with Explicit Points Solo for Text Spotting},
+  author={Ye, Maoyuan and Zhang, Jing and Zhao, Shanshan and Liu, Juhua and Liu, Tongliang and Du, Bo and Tao, Dacheng},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={19348--19357},
+  year={2023}
+}
+```
 
 # Acknowledgements
 
