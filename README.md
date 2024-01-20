@@ -31,13 +31,17 @@
 
 - The paper is uploaded to arxiv! 
 
+***20/01/2024***
+
+- Update ArTVideo and refresh a new record on ICDAR15-video! 
+
 
 
 
 # Usage
 ### Dataset
 
-Videos in [ICDAR15-video](https://rrc.cvc.uab.es/?ch=3&com=downloads) and [DSText](https://rrc.cvc.uab.es/?ch=22&com=downloads) should be extracted into frames. And using json format annotation files [[ICDAR15-video](https://drive.google.com/drive/folders/1h-lYYCxJ61pGN63xiUsRUfKHYqjX0NnH?usp=drive_link) & [DSText](https://drive.google.com/drive/folders/1D49hsIsYQtDNzYsgoYNEEmUgXh8QW68y?usp=drive_link)] we provide for training.  The prepared Data organization is as follows:
+Videos in [ICDAR15-video](https://rrc.cvc.uab.es/?ch=3&com=downloads) and [DSText](https://rrc.cvc.uab.es/?ch=22&com=downloads) should be extracted into frames. And using json format annotation files [[ICDAR15-video](https://drive.google.com/drive/folders/1h-lYYCxJ61pGN63xiUsRUfKHYqjX0NnH?usp=drive_link) & [DSText](https://drive.google.com/drive/folders/1D49hsIsYQtDNzYsgoYNEEmUgXh8QW68y?usp=drive_link)] we provide for training.  For [ArTVideo](https://drive.google.com/drive/folders/1Nt0vXW9Z9ntRKbZ-AnO6ywfGVU4YPeFE?usp=drive_link), you can download it to `./datasets`. The prepared Data organization is as follows:
 
 ```
 |- ./datasets
@@ -72,6 +76,18 @@ Videos in [ICDAR15-video](https://rrc.cvc.uab.es/?ch=3&com=downloads) and [DSTex
 		|			 	└--- ...
 		|      |--- vts_train.json
 		|      └--- vts_test_wo_anno.json
+		|--- ArTVideo
+		|      |--- frame
+		|            |--- video_1
+		|                    |--- 1.jpg
+		|                    └---  ...
+		|			 └--- ...
+		|      |--- json
+		|            |--- video_1.json
+		|			 └--- ...
+		|      |--- video
+		|            |--- video_1.mp4
+		|			 └--- ...
 ```
 
 ### Installation
@@ -136,6 +152,25 @@ zip -r ../preds.zip ./*
 
 Then you can submit the `zip` file to the [official websit](https://rrc.cvc.uab.es/?ch=22&com=evaluation&task=2) for evaluation.
 
+**ArTVideo**  The standard of evaluation is consistent with [BOVText](https://github.com/weijiawu/BOVText-Benchmark).
+
+```
+python eval.py --config-file configs/GoMatching_Eval_ArTVideo.yaml --input ./datasets/ArTVideo/frame/ --output output/artvideo --opts MODEL.WEIGHTS trained_models/ICDAR15/xxx.pth
+
+### evaluation
+# 1. eval tracking on straight and curve text
+python tools/Evaluation_Protocol_ArtVideo/eval_trk.py --groundtruths ./datasets/ArTVideo/json/ --tests output/artvideo/jsons/
+
+# 2. eval tracking on curve text only
+python tools/Evaluation_Protocol_ArtVideo/eval_trk.py --groundtruths ./datasets/ArTVideo/json/ --tests output/artvideo/jsons/ --curve
+
+# 3. eval spotting on straight and curve text
+python tools/Evaluation_Protocol_ArtVideo/eval_e2e.py --groundtruths ./datasets/ArTVideo/json/ --tests output/artvideo/jsons/
+
+# 4. eval spotting on curve text only
+python tools/Evaluation_Protocol_ArtVideo/eval_e2e.py --groundtruths ./datasets/ArTVideo/json/ --tests output/artvideo/jsons/ --curve
+```
+
 **Note:** If you want to visualize the results, you can add `--show` argument as follow:
 
 ```python
@@ -149,7 +184,7 @@ python eval.py --config-file configs/GoMatching_ICDAR15.yaml --input ./datasets/
 
 |   Method   | MOTA  | MOTP  | IDF1  |                            Weight                            |
 | :--------: | :---: | :---: | :---: | :----------------------------------------------------------: |
-| GoMatching | 70.52 | 78.25 | 78.70 | [GoogleDrive](https://drive.google.com/file/d/1wYvlqYh4xUvW0zkMxZXdaBTV9lyqMapu/view?usp=drive_link) |
+| GoMatching | 72.04 | 78.53 | 80.11 | [GoogleDrive](https://drive.google.com/file/d/1wYvlqYh4xUvW0zkMxZXdaBTV9lyqMapu/view?usp=drive_link) |
 
 
 
