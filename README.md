@@ -18,7 +18,7 @@
 <img src="figs/framework.png">
 </figure>
 
-1. We identify a main bottleneck in the state-of-the-art video text spotter: the limited recognition capability. In response to this issue, we propose to efficiently turn an off-the-shelf query-based image text spotter into a specialist on video and present a simple baseline termed GoMatching, along with its extension version, GoMatching++..
+1. We identify a main bottleneck in the state-of-the-art video text spotter: the limited recognition capability. In response to this issue, we propose to efficiently turn an off-the-shelf query-based image text spotter into a specialist on video and present a simple baseline termed GoMatching, along with its extension version, GoMatching++.
 2. We introduce a rescoring mechanism and long-short term matching module to adapt image text spotter to video datasets and enhance the tracker's capabilities.
 3. We establish the ArTVideo test set for addressing the absence of curved texts in current video text spotting datasets and evaluating the performance of video text spotters on videos with arbitrary-shaped text. ArTVideo contains 60 video clips, featuring over 30% curved text.
 4. GoMatching only requires 3 hours training on one Nvidia RTX 3090 GPU for ICDAR15-video. For video text spotting task, GoMatching achieves 72.20 MOTA on ICDAR15-video, setting a new record on the leaderboard. We reveal the probability of freezing off-the-shelf ITS part and focusing on tracking, thereby saving training budgets while reaching SOTA performance. 
