@@ -161,6 +161,7 @@ class SetCriterion(nn.Module):
         input_lengths = torch.full((src.size(1),), src.size(0), dtype=torch.long)
         target_lengths = (target_texts != self.voc_size).long().sum(dim=-1)
 
+        ### modified by hhb
         if target_lengths.sum() == 0:
             return {'loss_texts': target_texts.new_zeros((1,), dtype=torch.float32)[0]}
 
@@ -175,6 +176,7 @@ class SetCriterion(nn.Module):
                 reduction='none',
                 zero_infinity=True)
 
+        ### modify by hhb
         ignore_idx = torch.tensor([], dtype=torch.bool)
         s_id = 0
         e_id = 0

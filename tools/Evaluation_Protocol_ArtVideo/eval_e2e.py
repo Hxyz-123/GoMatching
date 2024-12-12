@@ -8,7 +8,7 @@ import numpy as np
 import copy
 import motmetrics as mm
 import logging
-from tqdm import  tqdm
+from tqdm import tqdm
 from tracking_utils.io import read_results
 import Levenshtein
 from shapely.geometry import Polygon
@@ -335,5 +335,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-

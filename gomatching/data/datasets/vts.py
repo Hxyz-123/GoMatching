@@ -9,6 +9,8 @@ from fvcore.common.timer import Timer
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.structures import BoxMode
 import numpy as np
+from shapely.geometry import LinearRing
+from .bezier_tools import polygon2rbox, cpt_bezier_pts, polygon_to_bezier_pts
 
 logger = logging.getLogger(__name__)
 
@@ -18,40 +20,6 @@ CTLABELS = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7, 'i':
             '4': 30, '5': 31, '6': 32, '7': 33, '8': 34, '9': 35}
 
 import numpy as np
-
-def distance(p1, p2):
-    return np.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
-
-def bezier_points(p1, p2, num_points):
-    pts = []
-    pts.append(p1)
-    for i in range(1, num_points+1):
-        t = i / (num_points+1)
-        x = int((1-t)*p1[0] + t*p2[0])
-        y = int((1-t)*p1[1] + t*p2[1])
-        pts.append([x, y])
-    pts.append(p2)
-    return pts
-
-def longest_edges(rect):
-    pts_arr = np.array(rect)
-    ctr = np.mean(pts_arr, axis=0, dtype=int)
-    ids = np.argsort(np.arctan2(pts_arr[:, 1] - ctr[1], pts_arr[:, 0] - ctr[0])) # clockwise
-    poly = pts_arr[ids]
-    edges = [(poly[i], poly[(i+1) % 4]) for i in range(4)]
-    edges_sorted = sorted(edges, key=lambda e: -distance(*e))
-    return edges_sorted[:2]
-
-def cpt_bezier_pts(rect):
-    edges = longest_edges(rect)
-    bezier_pts = []
-    for edge in edges:
-        bezier_pts.extend(bezier_points(*edge, 2))
-    bzr_arr = np.array(bezier_pts)
-    bzr_ctr = np.mean(bzr_arr, axis=0, dtype=int)
-    ids = np.argsort(np.arctan2(bzr_arr[:, 1] - bzr_ctr[1], bzr_arr[:, 0] - bzr_ctr[0]))  # clockwise
-    bzr_clk = bzr_arr[ids]
-    return bzr_clk
 
 def load_video_json(
     json_file, image_root, dataset_name=None, extra_annotation_keys=None,
@@ -120,6 +88,9 @@ def load_video_json(
         record['video_id'] = video_id
         # finish modified
         objs = []
+
+        # if len(anno_dict_list) > 200: # query 100
+        #     continue
         for anno in anno_dict_list:
             assert anno["image_id"] == image_id
             assert anno.get("ignore", 0) == 0, '"ignore" in COCO json file is not supported.'
@@ -158,22 +129,43 @@ def load_video_json(
                 obj['instance_id'] = inst_id_map[obj['instance_id']]
 
             texts = anno.get("transcription", None)
+            text_category = anno.get("text_category", None)
+            text = np.full([25], 37, dtype=np.int32)
             if texts:
                 text_str = texts.lower()
-                text = np.full([25], 37, dtype=np.int32)
-                if text_str == '###':
+                if text_str == '###' or text_category == 'nonalphanumeric':
                     text[0] = 36
                 else:
                     for idx, ch in enumerate(text_str):
+                        if idx > 24:
+                            break
                         if ch in CTLABELS:
                             text[idx] = CTLABELS[ch]
                         else:
                             text[idx] = 36
-                obj['texts'] = text
+            else:
+                text[0] = 36
+            obj['texts'] = text
+            
+            bezierpts = None
+            if "bezier_pts" in anno:
+                bezierpts = anno.get("bezier_pts", None)
 
-            bezierpts = anno.get("poly", None)
-            if bezierpts:
-                bezierpts = cpt_bezier_pts(bezierpts)
+            elif "poly" in anno:
+                polys = anno.get("poly", None)
+                polys = np.array(polys).reshape((-1, 2)).astype(np.float32)
+                if len(polys) == 4:
+                    bezierpts = polygon2rbox(polys, record["height"], record["width"])
+                    pRing = LinearRing(bezierpts)
+                    if not pRing.is_ccw:
+                        bezierpts.reverse()
+                    bezierpts = cpt_bezier_pts(bezierpts)
+                elif len(polys) == 14:
+                    bezierpts = polygon_to_bezier_pts(polys)
+                else:
+                    raise ValueError('Error Num of points')
+
+            if bezierpts is not None:
                 bezierpts = np.array(bezierpts).reshape(-1, 2)
                 center_bezierpts = (bezierpts[:4] + bezierpts[4:][::-1, :]) / 2
                 obj["beziers"] = center_bezierpts
@@ -185,6 +177,8 @@ def load_video_json(
                            + np.outer(u ** 3, bezierpts[:, 3])
                 obj["boundary"] = np.hstack([boundary[:, :2], boundary[:, 2:][::-1, :]]).reshape(-1, 2)
                 obj["polyline"] = (boundary[:, :2] + boundary[:, 2:][::-1, :]) / 2
+            else:
+                pass
 
             objs.append(obj)
         record["annotations"] = objs
@@ -221,13 +215,13 @@ def _get_builtin_metadata():
 
 _PREDEFINED_SPLITS = {
     "icdar15_train": ("ICDAR15/frame/",
-        "ICDAR15/vts_train.json"),
-    "icdar15_test": ("ICDAR15/frame_test/",
-        "ICDAR15/vts_test_wo_anno.json"),
+        "ICDAR15/train.json"),
     "dstext_train": ("DSText/frame/",
-        "DSText/vts_train.json"),
-    "dstext_test": ("DSText/frame_test/",
-        "DSText/vts_test_wo_anno.json"),
+        "DSText/train.json"),
+    "artvideo_train": ("ArTVideo/Train/frame/",
+        "ArTVideo/Train/train.json"),
+    "bov_train": ("BOVText/frame/",
+        "BOVText/train.json"),
 
 }
 
@@ -235,6 +229,6 @@ for key, (image_root, json_file) in _PREDEFINED_SPLITS.items():
     register_vts_instances(
         key,
         _get_builtin_metadata(),
-        os.path.join("./datasets", json_file) if "://" not in json_file else json_file,
-        os.path.join("./datasets", image_root),  # datasets
+        os.path.join("datasets/", json_file) if "://" not in json_file else json_file, 
+        os.path.join("datasets/", image_root),  
     )

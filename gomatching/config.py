@@ -24,6 +24,7 @@ def add_gom_config(cfg):
     _C.MODEL.ASSO_HEAD.ASSO_THRESH_TEST = -1.0
     _C.MODEL.ASSO_HEAD.CTRS_WEIGHT = 1.0
     _C.MODEL.ASSO_HEAD.ASSO_WEIGHT_LOCAL = 1.0
+    _C.MODEL.ROI_HEADS.WITH_RESR = True
 
     _C.MODEL.SWIN = CN()
     _C.MODEL.SWIN.SIZE = 'B' # 'T', 'S', 'B'

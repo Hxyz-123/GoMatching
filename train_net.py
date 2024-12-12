@@ -94,8 +94,19 @@ def do_train(cfg, model, resume=False):
 
     logger.info("Starting training from iteration {}".format(start_iter))
 
-    for param_k, param_q in zip(model.roi_heads.rescoring_head.parameters(), model.detection_transformer.ctrl_point_class[-1].parameters()):
-        param_k.data = param_q.data.clone().detach()
+    if cfg.MODEL.ROI_HEADS.WITH_RESR:
+        if '_rescore' not in cfg.MODEL.WEIGHTS:
+            for param_k, param_q in zip(model.roi_heads.rescoring_head.parameters(), model.detection_transformer.ctrl_point_class[-1].parameters()):
+                param_k.data = param_q.data.clone().detach()
+            print('using deepsolo classifier')
+        else:
+            for v in model.roi_heads.rescoring_head.parameters():
+                v.requires_grad = False
+            print('using trained rescoring head')
+
+    trainable_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_parameters = sum(p.numel() for p in model.parameters())
+    print('trainble params:{} M, total params:{} M'.format(trainable_parameters / 1e6, total_parameters / 1e6))
 
     with EventStorage(start_iter) as storage:
         step_timer = Timer()
@@ -196,3 +207,6 @@ if __name__ == "__main__":
         dist_url=args.dist_url,
         args=(args,),
     )
+
+# --num-gpus 1 --config-file configs/GoMatching_PP_DSText.yaml
+# --num-gpus 1 --config-file configs/GoMatching_ICDAR15.yaml

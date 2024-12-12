@@ -96,7 +96,7 @@ class TextTrackingVisualizer(VideoVisualizer):
         self.img = np.asarray(frame).clip(0, 255).astype(np.uint8)
         self.output = VisImage(self.img)
         self._default_font_size = max(
-            np.sqrt(self.output.height * self.output.width) // 90, 10 // 1.0
+            np.sqrt(self.output.height * self.output.width) // 70, 10 // 1.0  # // 70 for ic15, dstext  50 for bovtext
         )
         num_instances = len(predictions)
         if num_instances == 0:
@@ -110,6 +110,7 @@ class TextTrackingVisualizer(VideoVisualizer):
             alpha=0.5,
             texts=predictions.texts,
             track_ids=predictions.track_ids,
+            scores=predictions.scores
         )
 
         return self.output
@@ -121,6 +122,7 @@ class TextTrackingVisualizer(VideoVisualizer):
         alpha=0.5,
         texts=None,
         track_ids=None,
+        scores=None,
     ):
         num_instances = 0
         if bd_pts is not None:
@@ -137,14 +139,17 @@ class TextTrackingVisualizer(VideoVisualizer):
             text = texts[i]
             if self.voc_size == 37:
                 text = text.upper()
-            # text = "{:.2f}: {}".format(score, text)
+            score = scores[i]
+
             text = "({}){}".format(track_ids[i],text)
+
             line = self._process_ctrl_pnt(ctrl_pnts[i])
             line_ = LineString(line)
             center_point = np.array(line_.interpolate(0.5, normalized=True).coords[0], dtype=np.int32)
             lighter_color = self._change_color_brightness(color, brightness_factor=0)
             font_size = self._default_font_size
             text_pos = center_point
+            ## draw text
             self.draw_text(
                 text,
                 text_pos,
@@ -289,7 +294,7 @@ class GoMPredictor(DefaultPredictor):
 
 class GoMBatchPredictor(DefaultPredictor):
     @torch.no_grad()
-    def __call__(self, original_frames, instances, batch_id, id_count, last_batch, return_time=False):
+    def __call__(self, original_frames, instances, batch_id, id_count, last_batch, time_cost, return_time=False):
         """
         Args:
             original_image (np.ndarray): an image of shape (H, W, C) (in BGR order).
@@ -299,6 +304,13 @@ class GoMBatchPredictor(DefaultPredictor):
                 the output of the model for one image only.
         """
 
+        # test_in = torch.rand([3, 1280, 1280], device='cuda')
+        # flops, n_paras = profile(self.model, inputs=([test_in], 0, 0, []))
+        # print(f"FLOPS: {flops / 1e9} G")
+        # print(f"N_PARAS: {n_paras / 1e6} M")
+        # trainable_parameters = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        # total_parameters = sum(p.numel() for p in self.model.parameters())
+        # print('trainble params:{} M, total params:{} M'.format(trainable_parameters / 1e6, total_parameters / 1e6))
 
         if self.input_format == "RGB":
             original_frames = \
@@ -311,11 +323,13 @@ class GoMBatchPredictor(DefaultPredictor):
         inputs = [{"image": x, "height": height, "width": width, "video_id": 0} \
             for x in frames]
         start_time = time.time()
-        instances, id_count = self.model.batch_inference(inputs, batch_id, id_count, instances)
+        instances, id_count = self.model.batch_inference(inputs, batch_id, id_count, instances, time_cost)
         if last_batch:
+            start = time.time()
             if self.model.min_track_len > 0:
                 instances = self.model._remove_short_track(instances)
-            instances = self.model.batch_postprocess(instances, [(height, width) for _ in range((batch_id + 1) * 100 + len(inputs))])
+            instances = self.model.batch_postprocess(instances, [(height, width) for _ in range((batch_id + 1) * 100 + len(inputs))]) # 100
+            time_cost['post_process'] += time.time() - start
         if return_time:
             return instances, id_count, time.time() - start_time
         return instances, id_count
@@ -335,7 +349,7 @@ class TextVisualizationDemo(object):
         )
         self.cpu_device = torch.device("cpu")
         self.instance_mode = instance_mode
-        self.video_predictor = GoMPredictor(cfg)
+        self.video_predictor = GoMBatchPredictor(cfg)
         self.cfg = cfg
 
 

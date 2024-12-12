@@ -24,7 +24,8 @@ class Transformer(nn.Module):
                  return_intermediate_dec=False,
                  norm=False, no_encoder_ffn=False,
                  no_decoder_self_att=False,
-                 no_encoder_self_att=False,):
+                 no_encoder_self_att=False,
+                 only_dec_crs_attn=False):
         super().__init__()
 
         encoder_layer = TransformerEncoderLayer(
@@ -41,7 +42,7 @@ class Transformer(nn.Module):
             decoder_layer = TransformerDecoderLayer(
                 d_model, nhead, dim_feedforward,
                 dropout, activation, normalize_before,
-                norm=norm, no_decoder_self_att=no_decoder_self_att)
+                norm=norm, no_decoder_self_att=no_decoder_self_att, only_dec_crs_attn=only_dec_crs_attn)
             decoder_norm = nn.LayerNorm(d_model) if norm else None
             self.decoder = TransformerDecoder(
                 decoder_layer, num_decoder_layers, decoder_norm,
@@ -234,23 +235,25 @@ class TransformerDecoderLayer(nn.Module):
 
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
                  activation="relu", normalize_before=False, norm=True,
-                 no_decoder_self_att=False):
+                 no_decoder_self_att=False, only_dec_crs_attn=False):
         super().__init__()
         self.no_decoder_self_att = no_decoder_self_att
+        self.only_dec_crs_attn = only_dec_crs_attn
         if not self.no_decoder_self_att:
             self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
         self.multihead_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout)
-        # Implementation of Feedforward model
-        self.linear1 = nn.Linear(d_model, dim_feedforward)
-        self.dropout = nn.Dropout(dropout)
-        self.linear2 = nn.Linear(dim_feedforward, d_model)
-
-        self.norm1 = nn.LayerNorm(d_model) if norm else nn.Identity()
-        self.norm2 = nn.LayerNorm(d_model) if norm else nn.Identity()
-        self.norm3 = nn.LayerNorm(d_model) if norm else nn.Identity()
-        self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
-        self.dropout3 = nn.Dropout(dropout)
+        self.norm2 = nn.LayerNorm(d_model) if norm else nn.Identity()
+        # Implementation of Feedforward model
+        if not self.only_dec_crs_attn:
+            self.linear1 = nn.Linear(d_model, dim_feedforward)
+            self.dropout = nn.Dropout(dropout)
+            self.linear2 = nn.Linear(dim_feedforward, d_model)
+
+            self.norm1 = nn.LayerNorm(d_model) if norm else nn.Identity()
+            self.norm3 = nn.LayerNorm(d_model) if norm else nn.Identity()
+            self.dropout1 = nn.Dropout(dropout)
+            self.dropout3 = nn.Dropout(dropout)
 
         self.activation = _get_activation_fn(activation)
         self.normalize_before = normalize_before
@@ -277,9 +280,10 @@ class TransformerDecoderLayer(nn.Module):
                                    key_padding_mask=memory_key_padding_mask)[0]
         tgt = tgt + self.dropout2(tgt2)
         tgt = self.norm2(tgt)
-        tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
-        tgt = tgt + self.dropout3(tgt2)
-        tgt = self.norm3(tgt)
+        if not self.only_dec_crs_attn:
+            tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt))))
+            tgt = tgt + self.dropout3(tgt2)
+            tgt = self.norm3(tgt)
         return tgt
 
     def forward_pre(self, tgt, memory,

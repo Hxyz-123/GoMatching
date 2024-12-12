@@ -2,9 +2,15 @@ import copy
 import torch
 from torch import nn
 import torch.nn.functional as F
+from typing import List, Tuple
+from detectron2.modeling.proposal_generator.proposal_utils import add_ground_truth_to_proposals
+from detectron2.modeling.matcher import Matcher
+from detectron2.modeling.sampling import subsample_labels
+from detectron2.utils.events import get_event_storage
+import numpy as np
 
 from detectron2.config import configurable
-from detectron2.structures import Boxes, pairwise_iou
+from detectron2.structures import Boxes, pairwise_iou, Instances
 
 from detectron2.modeling.roi_heads.roi_heads import ROI_HEADS_REGISTRY
 from detectron2.modeling.roi_heads.roi_heads import ROIHeads
@@ -65,6 +71,13 @@ class LSTMatcher(torch.nn.Module):
         self.num_classes = cfg.MODEL.ROI_HEADS.NUM_CLASSES
         self.point_matcher = build_point_matcher(cfg)
 
+        self.proposal_append_gt = cfg.MODEL.ROI_HEADS.PROPOSAL_APPEND_GT
+        self.proposal_matcher = Matcher(
+            cfg.MODEL.ROI_HEADS.IOU_THRESHOLDS,
+            cfg.MODEL.ROI_HEADS.IOU_LABELS,
+            allow_low_quality_matches=False,
+        )
+
         assert not cfg.MODEL.ROI_HEADS.PROPOSAL_APPEND_GT
         self.asso_on = cfg.MODEL.ASSO_ON
         assert self.asso_on
@@ -78,6 +91,66 @@ class LSTMatcher(torch.nn.Module):
         ret['input_shape'] = input_shape
         return ret
 
+    def _sample_proposals(
+        self, matched_idxs: torch.Tensor, matched_labels: torch.Tensor, gt_classes: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        has_gt = gt_classes.numel() > 0
+        # Get the corresponding GT for each proposal
+        if has_gt:
+            gt_classes = gt_classes[matched_idxs]
+            gt_classes[matched_labels == 0] = self.num_classes
+            gt_classes[matched_labels == -1] = -1
+        else:
+            gt_classes = torch.zeros_like(matched_idxs) + self.num_classes
+
+        sampled_fg_idxs, sampled_bg_idxs = subsample_labels(
+            gt_classes, self.batch_size_per_image, self.positive_fraction, self.num_classes
+        )
+
+        sampled_idxs = torch.cat([sampled_fg_idxs, sampled_bg_idxs], dim=0)
+        return sampled_idxs, gt_classes[sampled_idxs]
+
+    @torch.no_grad()
+    def label_and_sample_proposals(
+            self, proposals: List[Instances], targets: List[Instances]
+    ) -> List[Instances]:
+        if self.proposal_append_gt:
+            proposals = add_ground_truth_to_proposals(targets, proposals)
+
+        proposals_with_gt = []
+
+        num_fg_samples = []
+        num_bg_samples = []
+        for proposals_per_image, targets_per_image in zip(proposals, targets):
+            has_gt = len(targets_per_image) > 0
+            match_quality_matrix = pairwise_iou(
+                targets_per_image.gt_boxes, proposals_per_image.proposal_boxes
+            )
+            matched_idxs, matched_labels = self.proposal_matcher(match_quality_matrix)
+            sampled_idxs, gt_classes = self._sample_proposals(
+                matched_idxs, matched_labels, targets_per_image.gt_classes
+            )
+
+            proposals_per_image = proposals_per_image[sampled_idxs]
+            proposals_per_image.gt_classes = gt_classes
+
+            if has_gt:
+                sampled_targets = matched_idxs[sampled_idxs]
+                for (trg_name, trg_value) in targets_per_image.get_fields().items():
+                    if trg_name.startswith("gt_") and not proposals_per_image.has(trg_name):
+                        proposals_per_image.set(trg_name, trg_value[sampled_targets])
+
+            num_bg_samples.append((gt_classes == self.num_classes).sum().item())
+            num_fg_samples.append(gt_classes.numel() - num_bg_samples[-1])
+            proposals_with_gt.append(proposals_per_image)
+
+        storage = get_event_storage()
+        storage.put_scalar("roi_head/num_fg_samples", np.mean(num_fg_samples))
+        storage.put_scalar("roi_head/num_bg_samples", np.mean(num_bg_samples))
+
+        return proposals_with_gt
+
 
     def _init_asso_head(self, cfg):
         self.feature_dim = cfg.MODEL.ASSO_HEAD.FC_DIM
@@ -89,6 +162,7 @@ class LSTMatcher(torch.nn.Module):
         self.with_temp_emb = cfg.MODEL.ASSO_HEAD.WITH_TEMP_EMB
         self.no_pos_emb = cfg.MODEL.ASSO_HEAD.NO_POS_EMB
         self.ctrs_weight = cfg.MODEL.ASSO_HEAD.CTRS_WEIGHT
+        self.with_rescore = cfg.MODEL.ROI_HEADS.WITH_RESR
         
         self.asso_thresh_test = self.asso_thresh_test \
             if self.asso_thresh_test > 0 else self.asso_thresh_train
@@ -108,8 +182,8 @@ class LSTMatcher(torch.nn.Module):
             fc_dim=self.feature_dim,
             num_fc=self.num_fc
         )
-
-        self.rescoring_head = nn.Linear(cfg.MODEL.TRANSFORMER.HIDDEN_DIM, 1)  # 1 for text
+        if self.with_rescore:
+            self.rescoring_head = nn.Linear(cfg.MODEL.TRANSFORMER.HIDDEN_DIM, 1)  # 1 for text
 
         self.asso_predictor = ATTWeightHead(
             self.feature_dim, num_layers=num_weight_layers, dropout=dropout)
@@ -462,6 +536,8 @@ class LSTMatcher(torch.nn.Module):
         enable reid head
         enable association
         """
+        # if self.training:
+        #     proposals = self.label_and_sample_proposals(proposals, targets)
 
         if self.training:
             losses = {}

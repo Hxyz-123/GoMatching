@@ -50,7 +50,7 @@ string in the seqmap.""", formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument('--groundtruths', type=str, default='./Test/Annotation'
                         , help='Directory containing ground truth files.')
-    parser.add_argument('--tests', type=str, default='../../output/artvideo/jsons',
+    parser.add_argument('--tests', type=str, default='/dat02/hhb/video_text_spotting/TransVTSpotter-main/output/ArTVideo/test/tracks/', # ../../output/artvideo/jsons
                         help='Directory containing tracker result files')
     parser.add_argument('--log', type=str, help='a place to record result and outputfile of mistakes', default='')
     parser.add_argument('--loglevel', type=str, help='Log level', default='info')
@@ -98,7 +98,7 @@ def calculate_iou_mask(mask1, mask2):
     return mask_iou
 
 
-def iou_matrix_polygen(objs, gt_transcription, hyps, transcription, max_iou=1., max_similarity=0.9):
+def iou_matrix_polygen(objs, hyps, max_iou=1., max_similarity=0.9):
     if np.size(objs) == 0 or np.size(hyps) == 0:
         return np.empty((0, 0))
     m = len(objs)
@@ -147,7 +147,6 @@ class Evaluator(object):
             frame_id = ann['frame_id']
             annotation = {}
             annotation["points"] = np.array(ann['point'], dtype=np.float32).astype(np.int32).reshape(-1)
-            annotation["transcription"] = ann['Transcription']
             annotation["ID"] = ann['obj_id']
             mask = mask_utils.decode(ann['segmentation'])
             annotation["mask"] = mask
@@ -157,17 +156,15 @@ class Evaluator(object):
     def reset_accumulator(self):
         self.acc = mm.MOTAccumulator(auto_id=True)
 
-    def eval_frame(self, frame_id, trk_tlwhs, trk_ids, trk_transcription, rtn_events=False):
+    def eval_frame(self, frame_id, trk_tlwhs, trk_ids, rtn_events=False):
         # results
         trk_tlwhs = np.copy(trk_tlwhs)
         trk_ids = np.copy(trk_ids)
-        trk_transcription = np.copy(trk_transcription)
 
         gt_objs = self.gt_frame_dict[frame_id]
 
         gts = []
         ids = []
-        transcription = []
         ignored = []
         for gt in gt_objs:
             if self.only_curve:
@@ -176,22 +173,20 @@ class Evaluator(object):
                 else:
                     gts.append(gt["mask"])
                     ids.append(gt["ID"])
-                    transcription.append(gt["transcription"])
+
             else:
                 gts.append(gt["mask"])
                 ids.append(gt["ID"])
-                transcription.append(gt["transcription"])
+
 
         gt_objs = gts
 
         gt_tlwhs = gt_objs
         gt_ids = ids
-        gt_transcription = transcription
 
         # filter
         trk_tlwhs_ = []
         trk_ids_ = []
-        trk_transcription_ = []
 
         for idx, box1 in enumerate(trk_tlwhs):
             flag = 0
@@ -202,13 +197,11 @@ class Evaluator(object):
             if flag == 0:
                 trk_tlwhs_.append(trk_tlwhs[idx])
                 trk_ids_.append(trk_ids[idx])
-                trk_transcription_.append(trk_transcription[idx])
 
         trk_tlwhs = trk_tlwhs_
         trk_ids = trk_ids_
-        trk_transcription = trk_transcription_
 
-        iou_distance = iou_matrix_polygen(gt_tlwhs, gt_transcription, trk_tlwhs, trk_transcription,
+        iou_distance = iou_matrix_polygen(gt_tlwhs, trk_tlwhs,
                                           max_iou=self.iou_thr, max_similarity=0.9)
 
         # acc
@@ -231,7 +224,6 @@ class Evaluator(object):
 
                 trk_tlwhs = []
                 trk_ids = []
-                trk_transcription = []
                 for trk in trk_objs:
                     if 'segmentation' in trk:
                         points = np.array(trk["points"], dtype=np.float32).astype(np.int32)
@@ -247,17 +239,12 @@ class Evaluator(object):
                         mask = cv2.fillPoly(mask, [np.array(points, dtype=np.int32).reshape(-1, 2)], 1)
                         trk_tlwhs.append(mask)  # points mask
                     trk_ids.append(np.array(trk["ID"], dtype=np.int32))
-                    try:
-                        trk_transcription.append(trk["transcription"])
-                    except:
-                        trk_transcription.append("error")
-                        print(trk)
+
             else:
                 trk_tlwhs = np.array([])
                 trk_ids = np.array([])
-                trk_transcription = []
 
-            self.eval_frame(str(frame_id), trk_tlwhs, trk_ids, trk_transcription, rtn_events=False)
+            self.eval_frame(str(frame_id), trk_tlwhs, trk_ids, rtn_events=False)
 
         return self.acc
 

@@ -1,4 +1,5 @@
 import argparse
+from glob import glob
 import multiprocessing as mp
 import numpy as np
 import os
@@ -139,8 +140,8 @@ def getBboxesAndLabels_icd131(annotations):
     return bboxes, IDs, Transcriptions, confidences
 
 def parse_xml_rec(annotation_path):
-    utf8_parser = ET.XMLParser(encoding='gbk')
-    with open(annotation_path, 'r', encoding='gbk') as load_f:
+    utf8_parser = ET.XMLParser(encoding='utf-8')  # utf-8 gbk
+    with open(annotation_path, 'r', encoding='utf-8') as load_f: # utf-8 gbk
         tree = ET.parse(load_f, parser=utf8_parser)
     root = tree.getroot()
 
@@ -270,6 +271,11 @@ if __name__ == "__main__":
     json_dir = os.path.join(args.output, 'jsons')
     os.makedirs(json_dir, exist_ok=True)
 
+    os.system('cp ' + args.config_file + ' ' + args.output)
+    preded_videos = []
+    for preded_video in glob(xml_dir + '/*.xml'):
+        preded_videos.append(preded_video.split('//')[-1].split('res_')[-1].split('.xml')[0])
+
     assert os.path.isdir(args.input[0])
     videos_dir = args.input[0]
     video_files = []
@@ -277,10 +283,12 @@ if __name__ == "__main__":
         data_type = 'DSText'
     elif 'ICDAR15' in videos_dir:
         data_type = 'ICDAR15'
+    elif 'BOVText' in videos_dir:
+        data_type = 'BOVText'
     else:
         data_type = 'OTHER'
     for video in os.listdir(videos_dir):
-        if data_type == 'DSText':
+        if data_type == 'DSText' or data_type == 'BOVText':
             for video_file in os.listdir(os.path.join(videos_dir, video)):
                 video_files.append(os.path.join(videos_dir, video, video_file))
         else:
@@ -291,8 +299,9 @@ if __name__ == "__main__":
     metadata = MetadataCatalog.get("__unused")
     instance_mode = ColorMode.IMAGE
     tracker_visualizer = TextTrackingVisualizer(metadata, cfg, instance_mode)
-    total_time = 0
     total_frame = 0
+    time_cost = {'total_time': 0, 'pre_process': 0, 'backbone': 0, 'detector': 0, 'rescore': 0, 'tracker': 0, 'long_match': 0,
+                 'short_match': 0, 'post_process': 0}
     for video in tqdm(video_files):
         img_paths = []
         for img_file in os.listdir(video):
@@ -304,6 +313,9 @@ if __name__ == "__main__":
         total_frames = []
 
         video_name = video.split('/')[-1].split('.')[0]
+        if video_name == 'Cls1_Livestreaming_video40' or video_name in preded_videos: # filter bovtext damaged video
+            continue
+
         print('processing {}...'.format(video_name))
         if args.show:
             save_img_dir = os.path.join(save_dir, video_name)
@@ -314,7 +326,7 @@ if __name__ == "__main__":
         for idx, path in enumerate(img_paths):
             img = read_image(path, format="BGR")
             total_frames.append(img)
-            frames_batch[idx // 100].append(img)
+            frames_batch[idx // 100].append(img) # 100
 
         per_video_time = 0
         video_frames = len(total_frames)
@@ -326,10 +338,11 @@ if __name__ == "__main__":
             frames = frames_batch[batch_id]
             if batch_id == len(frames_batch) - 1:
                 last_batch = True
-            instances, id_count, per_batch_time = video_text_spotter(frames, instances, batch_id, id_count, last_batch, return_time=True)
+            instances, id_count, per_batch_time = video_text_spotter(frames, instances, batch_id, id_count, last_batch, time_cost, return_time=True)
             per_video_time += per_batch_time
-            total_time += per_batch_time
+            time_cost['total_time'] += per_batch_time
             total_frame += len(frames)
+
         for frame_id, (frame, prediction, save_path) in enumerate(zip(total_frames, instances, img_paths)):
             lines = []
             prediction = tracker_visualizer.pre_vis_process(prediction["instances"].to('cpu'))
@@ -341,6 +354,10 @@ if __name__ == "__main__":
                 rect = cv2.minAreaRect(poly)
                 box = np.array(cv2.boxPoints(rect)).reshape([8])
                 x1, y1, x2, y2, x3, y3, x4, y4 = [int(i) for i in box[:8]]
+                max_x, min_x = max(x1, x2, x3, x4), min(x1, x2, x3, x4)
+                max_y, min_y = max(y1, y2, y3, y4), min(y1, y2, y3, y4)
+                if max_y - min_y < 5 or max_x - min_x < 5:
+                    continue
                 blank = np.zeros((h, w), dtype=np.uint8)
                 seg = [poly.astype(int).tolist()]
                 lines.append([x1, y1, x2, y2, x3, y3, x4, y4, int(ID), text, seg])
@@ -360,7 +377,10 @@ if __name__ == "__main__":
             xml_path = os.path.join(xml_dir, "res_{}.xml".format(video_name))
         json_path = os.path.join(json_dir, "{}.json".format(video_name))
         Generate_Json_annotation(annotation, json_path, xml_path)
+
     getid_text(xml_dir)
-    print("total_time: ", total_time, ", per_video_time: ", total_time / len(video_files), ", per_img_time: ", total_time / total_frame, ", FPS: ", total_frame / total_time)
+    print("total_time: ", time_cost['total_time'], ", per_video_time: ", time_cost['total_time'] / len(video_files), ", per_img_time: ", time_cost['total_time'] / total_frame, ", FPS: ", total_frame / time_cost['total_time'])
+    print(time_cost)
 
-
+# python eval.py --config-file configs/GoMatching_DSText.yaml --input datasets/DSText/frame_test/ --output output/GoMatching/DSText --opts MODEL.WEIGHTS trained_models/GoMatching_dstext.pth
+# python eval.py --config-file configs/GoMatching_PP_DSText.yaml --input datasets/DSText/frame_test/ --output output/GoMatching++/DSText --opts MODEL.WEIGHTS trained_models/GoMatching_pp_dstext.pth

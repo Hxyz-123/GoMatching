@@ -185,7 +185,7 @@ class DETECTION_TRANSFORMER_WOBACKBONE(nn.Module):
 
         # (n_proposal x n_pts, d_model) -> (n_proposal, n_pts, d_model)
         point_embed = self.point_embed.weight.reshape((self.num_proposals, self.num_points, self.d_model)) # not shared
-
+        # point_embed = torch.flip(point_embed, dims=[0])
         (
             hs,
             init_reference,
@@ -200,6 +200,12 @@ class DETECTION_TRANSFORMER_WOBACKBONE(nn.Module):
         if self.boundary_head_on:
             outputs_bd_coords = []
 
+        # for lvl in range(hs.shape[0]):
+            # if lvl == 0:
+            #     reference = init_reference
+            # else:
+            #     reference = inter_references[lvl - 1]
+            # hs shape: (bs, n_proposal, n_pts, d_model)
         last_lvl = hs.shape[0] - 1
         reference = inter_references[last_lvl - 1]
         reference = inverse_sigmoid_offset(reference, offset=self.sigmoid_offset)
@@ -219,7 +225,25 @@ class DETECTION_TRANSFORMER_WOBACKBONE(nn.Module):
         outputs_coord = sigmoid_offset(tmp, offset=self.sigmoid_offset)
         if self.boundary_head_on:
             outputs_bd_coord = sigmoid_offset(tmp_bd, offset=self.sigmoid_offset)
+            # outputs_bd_coords.append(outputs_bd_coord)
 
+            # outputs_classes.append(outputs_class)
+            # outputs_texts.append(outputs_text)
+            # outputs_coords.append(outputs_coord)
+
+        # outputs_class = torch.stack(outputs_classes)
+        # outputs_text = torch.stack(outputs_texts)
+        # outputs_coord = torch.stack(outputs_coords)
+        # if self.boundary_head_on:
+        #     outputs_bd_coord = torch.stack(outputs_bd_coords)
+
+        # out = {
+        #     'pred_logits': outputs_class[-1],
+        #     'pred_text_logits': outputs_text[-1],
+        #     'pred_ctrl_points': outputs_coord[-1],
+        #     'pred_bd_points': outputs_bd_coord[-1] if self.boundary_head_on else None,
+        #     'query_features': hs[-1]
+        # }
         out = {
             'pred_logits': outputs_class,
             'pred_text_logits': outputs_text,
@@ -227,6 +251,21 @@ class DETECTION_TRANSFORMER_WOBACKBONE(nn.Module):
             'pred_bd_points': outputs_bd_coord if self.boundary_head_on else None,
             'query_features': hs[-1]
         }
+
+        ### NOTE: modified by ymy
+        # if self.aux_loss:
+        #     out['aux_outputs'] = self._set_aux_loss(
+        #         outputs_class,
+        #         outputs_text,
+        #         outputs_coord,
+        #         outputs_bd_coord if self.boundary_head_on else None
+        #     )
+        #
+        # enc_outputs_coord = enc_outputs_coord_unact.sigmoid()
+        # out['enc_outputs'] = {
+        #     'pred_logits': enc_outputs_class,
+        #     'pred_beziers': enc_outputs_coord
+        # }
 
         return out
 

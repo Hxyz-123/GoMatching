@@ -9,7 +9,7 @@ MODEL:
     DEPTH: 50
     STRIDE_IN_1X1: False
     OUT_FEATURES: [ "res3", "res4", "res5" ]
-  WEIGHTS: 'pretrained_models/ic15_finetune_100q.pth'  # note
+  WEIGHTS: 'pretrained_models/deepsolo_300q_dstext_ft.pth'
   TRANSFORMER:
     ENABLED: True
     NUM_FEATURE_LEVELS: 4
@@ -20,25 +20,27 @@ MODEL:
     HIDDEN_DIM: 256
     DROPOUT: 0.0
     NHEADS: 8
-    NUM_QUERIES: 100
+    NUM_QUERIES: 300 
     ENC_N_POINTS: 4
     DEC_N_POINTS: 4
     NUM_POINTS: 25
-    INFERENCE_TH_TRAIN: 0.3
-    INFERENCE_TH_TEST: 0.5
+    INFERENCE_TH_TRAIN: 0.4
+    INFERENCE_TH_TEST: 0.5 
     LOSS:
       POINT_CLASS_WEIGHT: 1.0
       POINT_COORD_WEIGHT: 1.0
       POINT_TEXT_WEIGHT: 0.5
       BOUNDARY_WEIGHT: 0.5
   ROI_HEADS:
-    NAME: LSTMatcher
+    NAME: LSTMatcher 
     PROPOSAL_APPEND_GT: False
     NUM_CLASSES: 1
+    WITH_RESR: False 
   ASSO_ON: True
   ASSO_HEAD:
     NEG_UNMATCHED: True
     ASSO_THRESH: 0.3
+    ASSO_THRESH_TEST: 0.5
     ASSO_WEIGHT: 0.5
     ASSO_WEIGHT_LOCAL: 0.5
     NUM_WEIGHT_LAYERS: 0
@@ -46,7 +48,7 @@ MODEL:
     NO_POS_EMB: True
 SOLVER:
   USE_CUSTOM_SOLVER: True
-  MAX_ITER: 60000
+  MAX_ITER: 30000
   LR_SCHEDULER_NAME: "WarmupCosineLR"
   BASE_LR: 0.00005
   OPTIMIZER: ADAMW
@@ -61,11 +63,12 @@ SOLVER:
 INPUT:
   FORMAT: RGB
   CUSTOM_AUG: EfficientDetResizeCrop
+  SCALE_RANGE: (0.5, 2.0)
   TRAIN_SIZE: 1280
   NOT_CLAMP_BOX: True
   TEST_INPUT_TYPE: square
-  MIN_SIZE_TEST: 1440
-  MAX_SIZE_TEST: 4000
+  MIN_SIZE_TEST: 1280
+  MAX_SIZE_TEST: 3000
   VIDEO:
     TRAIN_LEN: 6
     TEST_LEN: 6
@@ -84,4 +87,4 @@ DATASETS:
 FIND_UNUSED_PARAM: True
 DATALOADER:
   SAMPLER_TRAIN: "TrainingSampler"
-OUTPUT_DIR: "./trained_models/DSText/" # note
+OUTPUT_DIR: "./trained_models/GoM_DSText" 

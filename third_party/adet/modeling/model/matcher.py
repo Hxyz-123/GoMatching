@@ -61,6 +61,7 @@ class CtrlPointHungarianMatcher(nn.Module):
                             reduction='none'
                         )
 
+                        # modify by hhb
                         ignore_idx = torch.tensor([], dtype=torch.bool)
                         for idx, te in enumerate(targe_texts_batch):
                             if target_len_batch[idx] == 1 and te[0] == 36:

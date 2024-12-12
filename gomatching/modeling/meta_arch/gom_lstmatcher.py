@@ -1,3 +1,5 @@
+import time
+
 import torch
 from scipy.optimize import linear_sum_assignment
 from torch import nn
@@ -127,6 +129,7 @@ class GoMatching(nn.Module):
         self.local_iou_only = kwargs.pop('local_iou_only')
         self.not_mult_thresh = kwargs.pop('not_mult_thresh')
         self.nms_thresh = kwargs.pop('nms_thresh')
+        self.with_rescore = kwargs.pop('with_rescore')
 
         ### deeepsolo
         self.cfg = kwargs['cfg']
@@ -180,6 +183,7 @@ class GoMatching(nn.Module):
         ret['local_iou_only'] = cfg.VIDEO_TEST.LOCAL_IOU_ONLY
         ret['not_mult_thresh'] = cfg.VIDEO_TEST.NOT_MULT_THRESH
         ret['nms_thresh'] = cfg.VIDEO_TEST.NMS_THRESH
+        ret['with_rescore'] = cfg.MODEL.ROI_HEADS.WITH_RESR
 
         ### deepsolo cfg
         ret['cfg'] = cfg
@@ -195,18 +199,20 @@ class GoMatching(nn.Module):
             gt_texts = targets_per_image.texts
             gt_ctrl_points = raw_ctrl_points.reshape(-1, self.detection_transformer.num_points, 2) / \
                              torch.as_tensor([w, h], dtype=torch.float, device=self.device)[None, None, :]
+            gt_ids = targets_per_image.gt_instance_ids
             new_targets.append(
                 {
                     "labels": gt_classes,
                     "ctrl_points": gt_ctrl_points,
                     "texts": gt_texts,
+                    "ids": gt_ids,
                 }
             )
         return new_targets
 
     def forward(self, batched_inputs): # forward
-        images = self.preprocess_image(batched_inputs)
 
+        images = self.preprocess_image(batched_inputs)
         features, pos = self.backbone(images)
         gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
 
@@ -215,8 +221,11 @@ class GoMatching(nn.Module):
         targets = self.prepare_targets(gt_instances)
 
         ## rescoring
-        output["re_pred_logits"] = self.roi_heads.rescoring_head(output["query_features"])
-        res_loss = self.roi_heads.loss_res(output, targets)
+        if self.with_rescore:
+            output["re_pred_logits"] = self.roi_heads.rescoring_head(output["query_features"])
+            res_loss = self.roi_heads.loss_res(output, targets)
+        else:
+            output["re_pred_logits"] = None
 
         ctrl_point_cls = output["pred_logits"]
         ctrl_point_cls_re = output["re_pred_logits"]
@@ -252,23 +261,35 @@ class GoMatching(nn.Module):
         _, tracker_losses = self.roi_heads(images, det_proposals, gt_instances)
         losses = {}
         losses.update(tracker_losses)
-        losses.update(res_loss)
+        if self.with_rescore:
+            losses.update(res_loss)
         return losses
 
     def inference(
         self,
-        batched_inputs,
+        batched_inputs, time_cost
     ):
         assert not self.training
-
+        start = time.time()
         images = self.preprocess_image(batched_inputs)
-        # images = ImageList.from_tensors(batched_inputs)
+        time_cost['pre_process'] += time.time() - start
 
+        start = time.time()
         features, pos = self.backbone(images)
+        time_cost['backbone'] += time.time() - start
 
         ### detection
+        start = time.time()
         output = self.detection_transformer(features, pos, self.backbone)
-        output["re_pred_logits"] = self.roi_heads.rescoring_head(output["query_features"])
+        time_cost['detector'] += time.time() - start
+
+        if self.with_rescore:
+            start = time.time()
+            output["re_pred_logits"] = self.roi_heads.rescoring_head(output["query_features"])
+            time_cost['rescore'] += time.time() - start
+        else:
+            output["re_pred_logits"] = None
+
         ctrl_point_cls = output["pred_logits"]
         ctrl_point_cls_re = output["re_pred_logits"]
         ctrl_point_coord = output["pred_ctrl_points"]
@@ -285,6 +306,7 @@ class GoMatching(nn.Module):
             images.image_sizes
         )
         det_proposals = []
+
         for results_per_image in det_results:
             proposal = Instances(results_per_image.image_size)
             bd_pts = results_per_image.bd
@@ -299,9 +321,9 @@ class GoMatching(nn.Module):
                 keep = nms(boxes, scores, iou_threshold=self.nms_thresh)
                 boxes = boxes[keep]
                 for k, v in fields.items():
-                    proposal.set(k, v[keep])
+                    proposal.set(k, v[keep]) # v[keep]
                 proposal.proposal_boxes = Boxes(boxes)
-                proposal.objectness_logits = results_per_image.scores[keep]
+                proposal.objectness_logits = results_per_image.scores[keep] # [keep]
             else:
                 proposal.proposal_boxes = Boxes([]).to(self.device)
                 proposal.objectness_logits = results_per_image.scores
@@ -310,7 +332,9 @@ class GoMatching(nn.Module):
             det_proposals.append(proposal)
 
         ### matching
+        start = time.time()
         trk_results, _ = self.roi_heads(images, det_proposals, None)
+        time_cost['tracker'] += time.time() - start
         results = []
         for trk_per_img, det_per_img in zip(trk_results, det_proposals):
             assert len(trk_per_img) == len(det_per_img)
@@ -319,8 +343,8 @@ class GoMatching(nn.Module):
             result.pred_boxes = trk_per_img.pred_boxes
             result.scores = trk_per_img.scores
             result.pred_classes = trk_per_img.pred_classes
+
             result.ctrl_points = det_per_img.ctrl_points
-            result.rec_scores = det_per_img.rec_scores
             result.recs = det_per_img.recs
             result.bd = det_per_img.bd
             results.append(result)
@@ -339,12 +363,12 @@ class GoMatching(nn.Module):
             processed_results.append({"instances": r})
         return processed_results
 
-    def batch_inference(self, batched_inputs, batch_id, id_count, instances): # batch_inference
+    def batch_inference(self, batched_inputs, batch_id, id_count, instances, time_cost): # batch_inference
         video_len = len(batched_inputs)
-        start_frame_id = batch_id * 100
+        start_frame_id = batch_id * 100 # 100
         for frame_id in range(video_len):
             instances_wo_id = self.inference(
-                batched_inputs[frame_id: frame_id + 1])
+                batched_inputs[frame_id: frame_id + 1], time_cost)
             instances.extend([x for x in instances_wo_id])
 
             real_frame_id = start_frame_id + frame_id
@@ -354,19 +378,25 @@ class GoMatching(nn.Module):
                     device=instances[0].reid_features.device)
                 id_count = len(instances[0]) + 1
             elif real_frame_id == 1:
+                start = time.time()
                 instances[real_frame_id-1: real_frame_id+1], id_count = self.run_short_term_match(
                     instances[real_frame_id-1: real_frame_id+1], id_count=id_count)
+                time_cost['short_match'] += time.time() - start
             else:
+                start = time.time()
                 instances[real_frame_id-1: real_frame_id+1], cur_id = self.run_short_term_match(
                     instances[real_frame_id-1: real_frame_id+1])
+                time_cost['short_match'] += time.time() - start
                 if -1 in cur_id:
                     win_st = max(0, real_frame_id + 1 - self.test_len)
                     win_ed = real_frame_id + 1
+                    start = time.time()
                     instances[win_st: win_ed], id_count = self.run_long_term_match(
                         instances[win_st: win_ed],
                         k=min(self.test_len - 1, real_frame_id),
                         id_count=id_count,
                         cur_id=cur_id) # n_k x N
+                    time_cost['long_match'] += time.time() - start
             assert len(instances[-1].track_ids) == len(torch.unique(instances[-1].track_ids))
             if real_frame_id - self.test_len >= 0:
                 instances[real_frame_id - self.test_len].remove('reid_features')
@@ -450,7 +480,6 @@ class GoMatching(nn.Module):
             instance.scores = p.scores[keep]
             instance.pred_classes = p.pred_classes[keep]
             instance.ctrl_points = p.ctrl_points[keep]
-            instance.rec_scores = p.rec_scores[keep]
             instance.recs = p.recs[keep]
             instance.bd = p.bd[keep]
             instances.append(instance)
@@ -563,10 +592,14 @@ class GoMatching(nn.Module):
         ctrl_point_text = torch.softmax(ctrl_point_text, dim=-1)
         prob = ctrl_point_cls.mean(-2).sigmoid()
         scores, labels = prob.max(-1)
-        re_prob = ctrl_point_cls_re.mean(-2).sigmoid()
-        re_scores, re_labels = re_prob.max(-1)
-        final_scores = torch.where(scores > re_scores, scores, re_scores)
-        final_labels = torch.where(scores > re_scores, labels, re_labels)
+        if ctrl_point_cls_re is not None:
+            re_prob = ctrl_point_cls_re.mean(-2).sigmoid()
+            re_scores, re_labels = re_prob.max(-1)
+            final_scores = torch.where(scores > re_scores, scores, re_scores)
+            final_labels = torch.where(scores > re_scores, labels, re_labels)
+        else:
+            final_scores = scores
+            final_labels = labels
 
         if bd_points is not None:
             for scores_per_image, labels_per_image, ctrl_point_per_image, ctrl_point_text_per_image, bd, q, image_size in zip(
@@ -583,7 +616,6 @@ class GoMatching(nn.Module):
                 result = Instances(image_size)
                 result.scores = scores_per_image
                 result.pred_classes = labels_per_image
-                result.rec_scores = ctrl_point_text_per_image
                 ctrl_point_per_image[..., 0] *= image_size[1]
                 ctrl_point_per_image[..., 1] *= image_size[0]
                 result.ctrl_points = ctrl_point_per_image.flatten(1)

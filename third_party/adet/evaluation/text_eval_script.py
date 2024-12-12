@@ -29,9 +29,9 @@ def default_evaluation_params():
             'IOU_CONSTRAINT' :0.5,
             'AREA_PRECISION_CONSTRAINT' :0.5,
             'WORD_SPOTTING' :WORD_SPOTTING,
-            'MIN_LENGTH_CARE_WORD' :3,
+            'MIN_LENGTH_CARE_WORD' :3, # 3
             'GT_SAMPLE_NAME_2_ID':'([0-9]+).txt',
-            'DET_SAMPLE_NAME_2_ID':'([0-9]+).txt',            
+            'DET_SAMPLE_NAME_2_ID':'([0-9]+).txt',
             'LTRB':False, #LTRB:2points(left,top,right,bottom) or 4 points(x1,y1,x2,y2,x3,y3,x4,y4)
             'CRLF':False, # Lines are delimited by Windows CRLF format
             'CONFIDENCES':False, #Detections must include confidence value. MAP and MAR will be calculated,
@@ -290,7 +290,11 @@ def evaluate_method(gtFilePath, submFilePath, evaluationParams):
         for n in range(len(pointsList)):
             points = pointsList[n]
             transcription = transcriptionsList[n]
-            det_only_dontCare = dontCare = transcription == "###" # ctw1500 and total_text gt have been modified to the same format.
+
+            ## detection not contain '###' hhb
+            # det_only_dontCare = dontCare = transcription == "###" # ctw1500 and total_text gt have been modified to the same format.
+            dontCare = transcription == "###"
+
             if evaluationParams['LTRB']:
                 gtRect = Rectangle(*points)
                 gtPol = rectangle_to_polygon(gtRect)
@@ -309,9 +313,11 @@ def evaluate_method(gtFilePath, submFilePath, evaluationParams):
 
             gtTrans.append(transcription)
             if dontCare:
-                gtDontCarePolsNum.append( len(gtPols)-1 ) 
-            if det_only_dontCare:
-                det_only_gtDontCarePolsNum.append( len(gtPols)-1 ) 
+                gtDontCarePolsNum.append(len(gtPols)-1)
+
+            ### detection not contain '###' hhb
+            # if det_only_dontCare:
+            #     det_only_gtDontCarePolsNum.append(len(gtPols)-1)
 
         
         if resFile in subm:
