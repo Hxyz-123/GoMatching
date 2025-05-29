@@ -1,6 +1,7 @@
-<h1 align="center"> GoMatching: A Simple Baseline for Video Text Spotting via Long and Short Term Matching<a href="https://arxiv.org/abs/2401.07080"><img src="https://img.shields.io/badge/arXiv-Paper-<color>"></a> </h1>
+<h1 align="center"> GoMatching<a href="https://arxiv.org/abs/2401.07080"><img src="https://img.shields.io/badge/arXiv-Paper-<color>"></a> & GoMatching++<a href="https://arxiv.org/abs/2505.22228"><img src="https://img.shields.io/badge/arXiv-Paper-<color>"></a></h1>
+
 <p align="center">
-<h4 align="center">This is the official repository of the paper <a href="https://arxiv.org/abs/2401.07080">GoMatching: A Simple Baseline for Video Text Spotting via Long and Short Term Matching</a>.</h4>
+<h4 align="center">This is the official repository of the papers <a href="https://arxiv.org/abs/2401.07080">GoMatching: A Simple Baseline for Video Text Spotting via Long and Short Term Matching</a> and <a href="https://arxiv.org/abs/2505.22228">GoMatching++: Parameter- and Data-Efficient Arbitrary-Shaped Video Text Spotting and Benchmarking</a>.</h4>
 <h5 align="center"><em>Haibin He, Maoyuan Ye, Jing Zhang, Juhua Liu, Bo Du, Dacheng Tao</em></h5>
 <p align="center">
   <a href="#introduction">Introduction</a> |
@@ -12,8 +13,8 @@
 
 
 
-
 # Introduction
+
 <figure>
 <img src="figs/framework.png">
 </figure>
@@ -42,6 +43,10 @@
 ***12/12/2024***
 
 - Update GoMatching NeurIPS version and a more concise and effective implementation version, GoMacthing++. The paper of GoMatching++ will be released soon.
+
+***29/05/2025***
+
+-  The paper of GoMatching++ is uploaded to arxiv! 
 
 
 
@@ -345,11 +350,17 @@ This project is for research purpose only. For any other questions please contac
 If you find GoMatching helpful, please consider giving this repo a star and citing:
 
 ```bibtex
-@article{he2024gomatching,
-  title={GoMatching: A Simple Baseline for Video Text Spotting via Long and Short Term Matching},
-  author={He, Haibin and Ye, Maoyuan and Zhang, Jing and Liu, Juhua and Tao, Dacheng},
-  journal={arXiv preprint arXiv:2401.07080},
-  year={2024}
+@inproceedings{he2024gomatching,
+  title={GoMatching: A Simple Baseline for Video Text Spotting via Long and Short Term Matching},
+  author={He, Haibin and Ye, Maoyuan and Zhang, Jing and Liu, Juhua and Du, Bo and Tao, Dacheng},
+  booktitle={The Thirty-eighth Annual Conference on Neural Information Processing Systems}
+}
+
+@article{he2025gomatching++,
+  title={GoMatching++: Parameter- and Data-Efficient Arbitrary-Shaped Video Text Spotting and Benchmarking},
+  author={He, Haibin and Zhang, Jing and Ye, Maoyuan and Liu, Juhua and Du, Bo and Tao, Dacheng},
+  journal={arXiv preprint arXiv:2505.22228},
+  year={2025}
 }
 
 @inproceedings{ye2023deepsolo,
